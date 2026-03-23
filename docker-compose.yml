@@ -1,0 +1,127 @@
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_DB: stockdb
+      POSTGRES_USER: stockuser
+      POSTGRES_PASSWORD: stockpass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockuser"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - stock-net
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr PLAINTEXT://0.0.0.0:19092
+      - --advertise-kafka-addr PLAINTEXT://redpanda:19092
+      - --mode dev-container
+    ports:
+      - "19092:19092"
+      - "9644:9644"
+    networks:
+      - stock-net
+
+  airflow:
+    image: apache/airflow:2.8.0
+    container_name: airflow
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Kolkata
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://stockuser:stockpass@postgres:5432/airflow_db
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: standalone
+    networks:
+      - stock-net
+
+  ingestion-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: ingestion-service
+    container_name: ingestion-service
+    command: python src/producer.py
+    env_file: .env
+    depends_on:
+      - redpanda
+      - postgres
+    restart: unless-stopped
+    networks:
+      - stock-net
+
+  processing-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: processing-service
+    container_name: processing-service
+    command: python src/stream_processor.py
+    env_file: .env
+    depends_on:
+      - redpanda
+      - postgres
+    restart: unless-stopped
+    networks:
+      - stock-net
+
+  ai-agent-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: ai-agent-service
+    container_name: ai-agent-service
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - stock-net
+
+  analytics-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: analytics-service
+    container_name: analytics-service
+    command: python src/calculations.py
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - stock-net
+
+networks:
+  stock-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
