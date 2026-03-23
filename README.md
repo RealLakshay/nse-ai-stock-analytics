@@ -328,7 +328,3 @@ python services/ml-engine/inference.py
 ## License
 
 MIT License — free to use, modify, and distribute.
-
----
-
-Built with love for the Indian stock market
