@@ -25,20 +25,87 @@ A production-grade real-time stock market data pipeline and AI analytics platfor
 ---
 
 ## Architecture
+
+```mermaid
+flowchart TD
+    A[Kite WebSocket] --> D[Ingestion Service]
+    B[Upstox WebSocket] --> D
+    C[yfinance fallback] --> D
+    D --> E[Redpanda Kafka\nstock.prices.raw]
+    E --> F[Processing Service\nclean + anomaly detect]
+    F --> G[(PostgreSQL)]
+    G --> H[ML Engine\nProphet forecasts]
+    G --> I[AI Agent\nFastAPI + RAG]
+    H --> I
+    I --> J[Ollama Mistral\nnatural language answers]
 ```
-Zerodha Kite WebSocket / Upstox / yfinance
-              ↓
-     Kafka (Redpanda) — stock.prices.raw
-              ↓
-     Processing Service — clean + anomaly detect
-              ↓
-         PostgreSQL
-        ↙          ↘
-Prophet ML        AI Agent (FastAPI)
-Forecasts              ↓
-        ↘         Ollama Mistral LLM
-         ↘             ↓
-          → Natural Language Answers
+
+---
+
+## UML Class Diagram
+
+```mermaid
+classDiagram
+    class Ticker {
+        +int id
+        +str symbol
+        +str company_name
+        +str sector
+        +bool is_active
+        +sync_to_db()
+        +get_all_tickers()
+    }
+    class StockPrice {
+        +int id
+        +str ticker
+        +datetime timestamp
+        +float open
+        +float high
+        +float low
+        +float close
+        +int volume
+        +str source
+    }
+    class Anomaly {
+        +int id
+        +str ticker
+        +float zscore
+        +str anomaly_type
+        +bool alert_sent
+    }
+    class Forecast {
+        +int id
+        +str ticker
+        +date forecast_date
+        +float predicted_price
+        +float lower_bound
+        +float upper_bound
+    }
+    class AnomalyDetector {
+        +float zscore_threshold
+        +int window
+        +detect(ticker, close, ts)
+        +reset(ticker)
+    }
+    class RAGRetriever {
+        +get_price_history(ticker)
+        +get_latest_forecast(ticker)
+        +get_recent_anomalies(ticker)
+        +fetch_and_store_if_missing(ticker)
+    }
+    class AIAgentService {
+        +call_ollama(prompt)
+        +ask(request)
+        +forecast(ticker)
+        +compare(request)
+    }
+    Ticker "1" --> "many" StockPrice : tracks
+    Ticker "1" --> "many" Anomaly : flags
+    Ticker "1" --> "many" Forecast : predicts
+    AnomalyDetector --> Anomaly : creates
+    RAGRetriever --> StockPrice : reads
+    RAGRetriever --> Forecast : reads
+    AIAgentService --> RAGRetriever : uses
 ```
 
 ---
@@ -77,6 +144,7 @@ Forecasts              ↓
 ---
 
 ## Project Structure
+
 ```
 .
 ├── services/
@@ -129,30 +197,34 @@ Forecasts              ↓
 ## Quick Start
 
 ### 1 — Clone the repository
+
 ```bash
 git clone https://github.com/RealLakshay/nse-ai-stock-analytics.git
 cd nse-ai-stock-analytics
 ```
 
 ### 2 — Configure environment
+
 ```bash
 cp .env.example .env
 # Edit .env with your API keys
 ```
 
 ### 3 — Pull Mistral model
+
 ```bash
 ollama pull mistral
 ```
 
 ### 4 — Start the full stack
+
 ```bash
 docker compose up -d
 ```
 
 ### 5 — Run database migrations
+
 ```powershell
-# PowerShell
 $files = Get-ChildItem .\postgres\migrations\*.sql | Sort-Object Name
 foreach ($file in $files) {
   Get-Content $file.FullName -Raw | docker exec -i postgres psql -U stockuser -d stockdb
@@ -160,6 +232,7 @@ foreach ($file in $files) {
 ```
 
 ### 6 — Sync NSE tickers
+
 ```bash
 docker exec ingestion-service python -c "
 from shared.ticker_registry import TickerRegistry
@@ -168,6 +241,7 @@ print(TickerRegistry().sync_to_db(), 'tickers synced')
 ```
 
 ### 7 — Test the API
+
 ```bash
 curl http://localhost:8000/health
 ```
@@ -181,6 +255,7 @@ Base URL: `http://localhost:8000`
 API docs: `http://localhost:8000/docs`
 
 ### Ask about any stock
+
 ```bash
 curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
@@ -191,6 +266,7 @@ curl -X POST http://localhost:8000/ask \
 ```
 
 ### Get price forecast
+
 ```bash
 curl -X POST http://localhost:8000/forecast \
   -H "Content-Type: application/json" \
@@ -198,6 +274,7 @@ curl -X POST http://localhost:8000/forecast \
 ```
 
 ### Compare two stocks
+
 ```bash
 curl -X POST http://localhost:8000/compare \
   -H "Content-Type: application/json" \
@@ -209,11 +286,13 @@ curl -X POST http://localhost:8000/compare \
 ```
 
 ### Get anomalies
+
 ```bash
 curl http://localhost:8000/anomalies/RELIANCE.NS
 ```
 
 ### Market status
+
 ```bash
 curl http://localhost:8000/market/status
 ```
@@ -273,42 +352,39 @@ Data source priority: Kite → Upstox → yfinance
 
 **Ollama not connected**
 ```bash
-ollama serve  # make sure Ollama is running
+ollama serve
 ```
 
 **No data in responses**
 ```bash
-# Check if stock_prices table has data
 docker exec -it postgres psql -U stockuser -d stockdb -c "SELECT COUNT(*) FROM stock_prices;"
 ```
 
 **Ingestion service crashing**
 ```bash
 docker compose logs ingestion-service
-# Check KAFKA_BROKER=redpanda:19092 in .env (not localhost)
+# Check KAFKA_BROKER=redpanda:19092 in .env
 ```
 
 **Postgres not starting**
 ```bash
-docker compose down -v  # clear old volume
+docker compose down -v
 docker compose up postgres -d
 ```
 
 ---
 
 ## Local Development Without Docker
+
 ```bash
 pip install -r requirements.txt
 
-# Run services individually
 python services/ingestion-service/src/producer.py
 python services/processing-service/src/stream_processor.py
 uvicorn main:app --reload --port 8000 --app-dir services/ai-agent-service
 python services/ml-engine/train.py
 python services/ml-engine/inference.py
 ```
-
-Note: Requires running Postgres, Redpanda, and Ollama locally.
 
 ---
 
@@ -329,4 +405,4 @@ MIT License — free to use, modify, and distribute.
 
 ---
 
-Built with ❤️ for the Indian stock market
+Built with love for the Indian stock market
