@@ -56,3 +56,6 @@ logs/
 # Airflow local metadata
 airflow.db
 airflow-webserver.pid
+
+get_token.py
+
