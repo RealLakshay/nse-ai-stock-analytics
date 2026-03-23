@@ -26,87 +26,13 @@ A production-grade real-time stock market data pipeline and AI analytics platfor
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    A[Kite WebSocket] --> D[Ingestion Service]
-    B[Upstox WebSocket] --> D
-    C[yfinance fallback] --> D
-    D --> E[Redpanda Kafka\nstock.prices.raw]
-    E --> F[Processing Service\nclean + anomaly detect]
-    F --> G[(PostgreSQL)]
-    G --> H[ML Engine\nProphet forecasts]
-    G --> I[AI Agent\nFastAPI + RAG]
-    H --> I
-    I --> J[Ollama Mistral\nnatural language answers]
-```
+![Architecture](images/architecture.png)
 
 ---
 
 ## UML Class Diagram
 
-```mermaid
-classDiagram
-    class Ticker {
-        +int id
-        +str symbol
-        +str company_name
-        +str sector
-        +bool is_active
-        +sync_to_db()
-        +get_all_tickers()
-    }
-    class StockPrice {
-        +int id
-        +str ticker
-        +datetime timestamp
-        +float open
-        +float high
-        +float low
-        +float close
-        +int volume
-        +str source
-    }
-    class Anomaly {
-        +int id
-        +str ticker
-        +float zscore
-        +str anomaly_type
-        +bool alert_sent
-    }
-    class Forecast {
-        +int id
-        +str ticker
-        +date forecast_date
-        +float predicted_price
-        +float lower_bound
-        +float upper_bound
-    }
-    class AnomalyDetector {
-        +float zscore_threshold
-        +int window
-        +detect(ticker, close, ts)
-        +reset(ticker)
-    }
-    class RAGRetriever {
-        +get_price_history(ticker)
-        +get_latest_forecast(ticker)
-        +get_recent_anomalies(ticker)
-        +fetch_and_store_if_missing(ticker)
-    }
-    class AIAgentService {
-        +call_ollama(prompt)
-        +ask(request)
-        +forecast(ticker)
-        +compare(request)
-    }
-    Ticker "1" --> "many" StockPrice : tracks
-    Ticker "1" --> "many" Anomaly : flags
-    Ticker "1" --> "many" Forecast : predicts
-    AnomalyDetector --> Anomaly : creates
-    RAGRetriever --> StockPrice : reads
-    RAGRetriever --> Forecast : reads
-    AIAgentService --> RAGRetriever : uses
-```
+![UML](images/uml.png)
 
 ---
 
